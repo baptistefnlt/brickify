@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BRICKIFY — Vos souvenirs, brique par brique</title>
+<meta name="description" content="BRICKIFY transforme n'importe quelle image en mosaïque LEGO buildable en 30 secondes, grâce à un pipeline d'IA propriétaire." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DESIGN SYSTEM
+   ============================================================ */
+:root {
+  /* Color palette - editorial brutalist LEGO */
+  --cream: #F4EFE6;
+  --cream-warm: #ECE5D3;
+  --ink: #0F0F1A;
+  --ink-soft: #1A1B2E;
+  --orange: #FF6B1A;
+  --orange-deep: #E55300;
+  --red: #E63946;
+  --yellow: #FFD23F;
+  --blue: #2E5BFF;
+  --green: #06A77D;
+  --grey: #8B8A85;
+  --grey-soft: #D9D4C7;
+
+  /* Fluid type scale */
+  --hyper: clamp(4rem, 14vw, 14rem);
+  --display: clamp(2.5rem, 7vw, 6.5rem);
+  --h2: clamp(2rem, 5vw, 4rem);
+  --h3: clamp(1.25rem, 2.5vw, 1.75rem);
+  --body: clamp(1rem, 1.15vw, 1.125rem);
+  --small: 0.875rem;
+  --tiny: 0.75rem;
+
+  /* Spacing */
+  --section-y: clamp(6rem, 12vw, 10rem);
+  --gutter: clamp(1.5rem, 4vw, 4rem);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 400;
+  font-size: var(--body);
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--cream);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* Subtle grain overlay across whole site */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
+}
+
+::selection { background: var(--orange); color: var(--cream); }
+
+/* ============================================================
+   PROGRESS BAR
+   ============================================================ */
+.progress {
+  position: fixed; top: 0; left: 0;
+  height: 3px; width: 0%;
+  background: var(--orange);
+  z-index: 999;
+  transition: width 0.1s linear;
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+nav {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 99;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1.25rem var(--gutter);
+  mix-blend-mode: difference;
+  color: var(--cream);
+}
+
+.brand {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: 1.125rem;
+  letter-spacing: -0.02em;
+  font-variation-settings: "wdth" 75;
+}
+.brand-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--orange);
+  margin-left: 0.4rem;
+  vertical-align: middle;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.7; }
+}
+
+.nav-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+/* ============================================================
+   LAYOUT PRIMITIVES
+   ============================================================ */
+section {
+  padding: var(--section-y) var(--gutter);
+  position: relative;
+}
+
+.section-label {
+  display: flex; align-items: center; gap: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 2rem;
+  opacity: 0.7;
+}
+.section-label::before {
+  content: "";
+  width: 32px; height: 1px;
+  background: currentColor;
+}
+
+h1, h2, h3 {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-variation-settings: "wdth" 90;
+}
+
+h2 { font-size: var(--display); }
+h3 { font-size: var(--h2); }
+
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 500;
+}
+
+/* ============================================================
+   REVEAL ANIMATIONS
+   ============================================================ */
+.reveal {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 1s var(--ease-out), transform 1s var(--ease-out);
+}
+.reveal.in {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+.reveal-delay-5 { transition-delay: 0.5s; }
+.reveal-delay-6 { transition-delay: 0.6s; }
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: var(--gutter);
+  align-items: center;
+  padding-top: 6rem;
+  padding-bottom: 4rem;
+  position: relative;
+}
+
+.hero-bg {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--ink) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 0%, transparent 75%);
+}
+
+.hero-content {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-tag {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  font-weight: 500;
+  padding: 0.4rem 0.9rem;
+  border: 1.5px solid var(--ink);
+  border-radius: 100px;
+  margin-bottom: 2rem;
+}
+.hero-tag::before {
+  content: "● ";
+  color: var(--orange);
+}
+
+h1.hero-title {
+  font-size: var(--hyper);
+  line-height: 0.85;
+  letter-spacing: -0.06em;
+  font-weight: 800;
+  font-variation-settings: "wdth" 75;
+  margin-bottom: 2rem;
+}
+
+h1.hero-title .accent {
+  color: var(--orange);
+  font-style: italic;
+  font-variation-settings: "wdth" 100;
+}
+
+.hero-subtitle {
+  font-size: clamp(1.125rem, 1.6vw, 1.5rem);
+  max-width: 36ch;
+  margin-bottom: 2.5rem;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.hero-cta-row {
+  display: flex; gap: 1rem; align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  padding: 1rem 1.5rem;
+  background: var(--ink);
+  color: var(--cream);
+  text-decoration: none;
+  border-radius: 100px;
+  font-weight: 600;
+  font-size: var(--body);
+  transition: transform 0.3s var(--ease-out), background 0.3s var(--ease-out);
+  border: 1.5px solid var(--ink);
+}
+.btn:hover { background: var(--orange); border-color: var(--orange); transform: translateY(-2px); }
+.btn-arrow { font-family: 'JetBrains Mono', monospace; transition: transform 0.3s var(--ease-out); }
+.btn:hover .btn-arrow { transform: translateX(4px); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.btn-ghost:hover { background: var(--ink); color: var(--cream); }
+
+/* ============================================================
+   HERO MOSAIC VISUAL — pure CSS LEGO mosaic
+   ============================================================ */
+.mosaic-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+}
+
+.mosaic-frame {
+  position: relative;
+  width: min(100%, 480px);
+  aspect-ratio: 1;
+  background: var(--ink);
+  padding: 1rem;
+  border-radius: 4px;
+  box-shadow:
+    0 30px 60px -20px rgba(15, 15, 26, 0.4),
+    0 18px 36px -18px rgba(15, 15, 26, 0.3);
+  transform: rotate(-2deg);
+  transition: transform 0.6s var(--ease-out);
+}
+.mosaic-frame:hover { transform: rotate(0deg) scale(1.02); }
+
+.mosaic-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: repeat(12, 1fr);
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+}
+
+.brick {
+  position: relative;
+  border-radius: 2px;
+  display: grid; place-items: center;
+  opacity: 0;
+  animation: brickIn 0.6s var(--ease-out) forwards;
+}
+
+.brick::after {
+  content: "";
+  width: 38%; height: 38%;
+  border-radius: 50%;
+  background: inherit;
+  box-shadow:
+    inset 0 -1px 0 rgba(0,0,0,0.25),
+    inset 0 1px 1px rgba(255,255,255,0.35);
+}
+
+@keyframes brickIn {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.mosaic-caption {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.mosaic-caption-arrow {
+  display: inline-block;
+  margin: 0 0.5rem;
+  color: var(--orange);
+}
+
+/* Color helpers for bricks */
+.c-orange { background: var(--orange); }
+.c-red { background: var(--red); }
+.c-yellow { background: var(--yellow); }
+.c-blue { background: var(--blue); }
+.c-green { background: var(--green); }
+.c-cream { background: var(--cream-warm); }
+.c-ink { background: var(--ink-soft); }
+.c-grey { background: #4A4F6B; }
+.c-pink { background: #F4869B; }
+
+/* ============================================================
+   STATS BANNER
+   ============================================================ */
+.stats-banner {
+  background: var(--ink);
+  color: var(--cream);
+  padding: var(--section-y) var(--gutter);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 3rem 2rem;
+}
+
+.stat {
+  position: relative;
+  padding-left: 1.25rem;
+  border-left: 2px solid var(--orange);
+}
+
+.stat-num {
+  font-size: clamp(3rem, 6vw, 5rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variation-settings: "wdth" 75;
+}
+.stat-num .unit { font-size: 0.5em; opacity: 0.6; }
+
+.stat-label {
+  margin-top: 0.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* ============================================================
+   PROBLEM SECTION
+   ============================================================ */
+.problem {
+  background: var(--cream);
+}
+
+.problem-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: var(--gutter);
+  align-items: start;
+}
+
+.problem-headline {
+  font-size: var(--display);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  position: sticky; top: 6rem;
+}
+.problem-headline .strike {
+  position: relative;
+  display: inline-block;
+  color: var(--grey);
+}
+.problem-headline .strike::after {
+  content: "";
+  position: absolute;
+  left: -4%; right: -4%; top: 55%;
+  height: 0.18em;
+  background: var(--red);
+  transform: rotate(-3deg);
+}
+
+.problem-cards {
+  display: flex; flex-direction: column;
+  gap: 1.25rem;
+}
+
+.pcard {
+  background: var(--cream-warm);
+  padding: 2rem;
+  border-radius: 4px;
+  border-left: 4px solid var(--orange);
+  transition: transform 0.4s var(--ease-out);
+}
+.pcard:hover { transform: translateX(4px); }
+.pcard-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  color: var(--orange);
+  letter-spacing: 0.1em;
+  margin-bottom: 0.5rem;
+}
+.pcard p { font-size: 1.125rem; line-height: 1.4; }
+
+.verbatim {
+  margin-top: 3rem;
+  padding: 2.5rem;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.verbatim::before {
+  content: "“";
+  position: absolute; top: -2.5rem; left: 1rem;
+  font-size: 14rem;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  color: var(--orange);
+  opacity: 0.25;
+  line-height: 1;
+}
+.verbatim-quote {
+  font-size: clamp(1.125rem, 1.8vw, 1.5rem);
+  font-style: italic;
+  line-height: 1.4;
+  margin-bottom: 1.5rem;
+  position: relative; z-index: 1;
+}
+.verbatim-author {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  opacity: 0.7;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   SOLUTION / PIPELINE
+   ============================================================ */
+.solution {
+  background: var(--ink);
+  color: var(--cream);
+}
+
+.solution-intro {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--gutter);
+  align-items: end;
+  margin-bottom: 4rem;
+}
+
+.solution h2 .accent { color: var(--orange); }
+
+.solution-lede {
+  font-size: 1.125rem;
+  max-width: 40ch;
+  opacity: 0.85;
+  line-height: 1.5;
+}
+
+.pipeline {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+}
+
+.pipeline::before {
+  content: "";
+  position: absolute;
+  left: 5%; right: 5%; top: 28px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--orange), transparent);
+  z-index: 0;
+}
+
+.pipe-step {
+  position: relative;
+  padding-top: 4rem;
+  cursor: default;
+}
+
+.pipe-num {
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: var(--cream);
+  color: var(--ink);
+  display: grid; place-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.25rem;
+  z-index: 2;
+  transition: transform 0.3s var(--ease-out), background 0.3s var(--ease-out);
+  box-shadow:
+    inset 0 -3px 0 rgba(0,0,0,0.15),
+    inset 0 3px 1px rgba(255,255,255,0.3);
+}
+.pipe-step:hover .pipe-num {
+  background: var(--orange);
+  color: var(--cream);
+  transform: translateX(-50%) translateY(-4px) scale(1.08);
+}
+
+.pipe-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+.pipe-tech {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  color: var(--orange);
+  margin-bottom: 1rem;
+  text-align: center;
+}
+.pipe-desc {
+  font-size: var(--small);
+  opacity: 0.75;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.pipe-flow {
+  margin-top: 4rem;
+  display: flex; align-items: center; justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.pipe-flow .duration {
+  color: var(--orange);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   USER JOURNEY
+   ============================================================ */
+.journey {
+  background: var(--cream);
+}
+
+.journey-track {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-top: 4rem;
+  position: relative;
+}
+
+.journey-track::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 28px;
+  height: 2px;
+  background: var(--ink);
+  opacity: 0.15;
+}
+
+.j-step {
+  text-align: center;
+  position: relative;
+}
+.j-circle {
+  width: 56px; height: 56px;
+  margin: 0 auto 1.25rem;
+  border-radius: 50%;
+  background: var(--orange);
+  color: var(--cream);
+  display: grid; place-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.25rem;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    inset 0 -3px 0 rgba(0,0,0,0.18),
+    inset 0 3px 1px rgba(255,255,255,0.25);
+}
+.j-step:nth-child(even) .j-circle {
+  background: var(--ink);
+}
+.j-label {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+.j-sub {
+  font-size: var(--small);
+  color: var(--ink-soft);
+  opacity: 0.75;
+  max-width: 18ch;
+  margin: 0 auto;
+}
+
+/* ============================================================
+   MARKET
+   ============================================================ */
+.market {
+  background: var(--cream-warm);
+}
+
+.market-headline {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--gutter);
+  align-items: end;
+  margin-bottom: 4rem;
+}
+
+.market-num-card {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 3rem;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.market-num-card::after {
+  content: "";
+  position: absolute;
+  bottom: -40px; right: -40px;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: var(--orange);
+  opacity: 0.15;
+}
+
+.mc-num {
+  font-size: clamp(3.5rem, 8vw, 6rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  margin-bottom: 0.5rem;
+  font-variation-settings: "wdth" 75;
+}
+.mc-label { opacity: 0.7; font-family: 'JetBrains Mono', monospace; font-size: var(--small); letter-spacing: 0.05em; }
+
+.segments-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+.seg {
+  padding: 2rem 1.5rem;
+  background: var(--cream);
+  border-radius: 4px;
+  position: relative;
+  transition: transform 0.4s var(--ease-out), box-shadow 0.4s var(--ease-out);
+  border-top: 4px solid var(--orange);
+}
+.seg:nth-child(2) { border-color: var(--blue); }
+.seg:nth-child(3) { border-color: var(--green); }
+.seg:nth-child(4) { border-color: var(--red); }
+.seg:hover { transform: translateY(-6px); box-shadow: 0 20px 40px -20px rgba(15,15,26,0.2); }
+
+.seg-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  opacity: 0.6;
+  margin-bottom: 1rem;
+}
+.seg-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  font-variation-settings: "wdth" 85;
+  letter-spacing: -0.02em;
+}
+.seg-desc {
+  font-size: var(--small);
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+.seg-volume {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  font-weight: 500;
+  color: var(--orange);
+  border-top: 1px solid var(--grey-soft);
+  padding-top: 1rem;
+}
+.seg:nth-child(2) .seg-volume { color: var(--blue); }
+.seg:nth-child(3) .seg-volume { color: var(--green); }
+.seg:nth-child(4) .seg-volume { color: var(--red); }
+
+/* ============================================================
+   POSITIONING / MAPPING
+   ============================================================ */
+.positioning {
+  background: var(--cream);
+}
+
+.map {
+  margin-top: 4rem;
+  position: relative;
+  aspect-ratio: 16/10;
+  max-width: 1100px;
+  margin-left: auto; margin-right: auto;
+  background:
+    linear-gradient(to right, transparent calc(50% - 1px), var(--grey-soft) calc(50% - 1px), var(--grey-soft) calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(to bottom, transparent calc(50% - 1px), var(--grey-soft) calc(50% - 1px), var(--grey-soft) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+.map-axis {
+  position: absolute;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+.map-axis.x {
+  bottom: -2.5rem;
+  left: 50%; transform: translateX(-50%);
+}
+.map-axis.y {
+  top: 50%; left: -2.5rem;
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: center;
+}
+
+.map-quad {
+  position: absolute;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--grey);
+}
+.map-quad.tl { top: 1rem; left: 1rem; }
+.map-quad.tr { top: 1rem; right: 1rem; }
+.map-quad.bl { bottom: 1rem; left: 1rem; }
+.map-quad.br { bottom: 1rem; right: 1rem; }
+
+.bubble {
+  position: absolute;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: var(--small);
+  font-weight: 700;
+  cursor: default;
+  transition: transform 0.4s var(--ease-out);
+}
+.bubble:hover { transform: translate(-50%, -50%) scale(1.1); }
+
+.bubble.brickify {
+  width: 130px; height: 130px;
+  background: var(--orange);
+  color: var(--cream);
+  top: 18%; left: 78%;
+  transform: translate(-50%, -50%);
+  box-shadow:
+    inset 0 -6px 0 rgba(0,0,0,0.2),
+    inset 0 6px 2px rgba(255,255,255,0.3),
+    0 12px 30px -10px rgba(255, 107, 26, 0.5);
+  font-size: 1rem;
+}
+.bubble.brickify::after {
+  content: "Notre projet";
+  position: absolute;
+  bottom: -2.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.1em;
+  color: var(--orange);
+  font-weight: 500;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.bubble.compet {
+  width: 70px; height: 70px;
+  background: var(--ink);
+  color: var(--cream);
+  font-size: var(--tiny);
+  transform: translate(-50%, -50%);
+  padding: 0.5rem;
+  text-align: center;
+  line-height: 1.1;
+}
+.bubble.lego-art { top: 20%; left: 25%; background: #1A1F4D; }
+.bubble.bricklink { top: 38%; left: 40%; background: #2E5BFF; }
+.bubble.mosaicit { top: 78%; left: 72%; background: var(--red); }
+.bubble.brickapic { top: 65%; left: 60%; background: #8E4EC6; }
+
+/* ============================================================
+   PRICING
+   ============================================================ */
+.pricing { background: var(--ink); color: var(--cream); }
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 3rem;
+}
+
+.plan {
+  padding: 2rem 1.5rem;
+  border: 1.5px solid rgba(244, 239, 230, 0.15);
+  border-radius: 4px;
+  position: relative;
+  display: flex; flex-direction: column;
+  transition: transform 0.3s var(--ease-out), background 0.3s var(--ease-out);
+}
+.plan:hover {
+  transform: translateY(-6px);
+  background: rgba(244, 239, 230, 0.04);
+}
+.plan.featured {
+  background: var(--cream);
+  color: var(--ink);
+  border-color: var(--orange);
+}
+.plan.featured .plan-cta { background: var(--orange); color: var(--cream); }
+
+.plan-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 1rem;
+}
+.plan.featured .plan-tag::before {
+  content: "★ Recommandé · ";
+  color: var(--orange);
+}
+.plan-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  letter-spacing: -0.02em;
+}
+.plan-price {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.04em;
+  font-variation-settings: "wdth" 75;
+}
+.plan-price .unit { font-size: 0.4em; opacity: 0.6; font-weight: 400; }
+.plan-when {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  opacity: 0.6;
+  margin-bottom: 1.5rem;
+}
+.plan-target {
+  font-size: var(--small);
+  opacity: 0.8;
+  margin-bottom: 2rem;
+  flex: 1;
+  line-height: 1.4;
+}
+.plan-cta {
+  padding: 0.85rem 1rem;
+  background: rgba(244, 239, 230, 0.1);
+  color: var(--cream);
+  border-radius: 100px;
+  border: none;
+  font-family: inherit;
+  font-size: var(--small);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.3s;
+}
+.plan-cta:hover { opacity: 0.8; }
+
+/* ============================================================
+   ROADMAP
+   ============================================================ */
+.roadmap { background: var(--cream); }
+
+.timeline {
+  margin-top: 4rem;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 5%; right: 5%; top: 80px;
+  height: 4px;
+  background: var(--ink);
+  opacity: 0.1;
+  border-radius: 4px;
+}
+
+.mile {
+  text-align: center;
+  position: relative;
+}
+
+.mile-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.mile-stud {
+  width: 56px; height: 56px;
+  margin: 0 auto 1.5rem;
+  border-radius: 50%;
+  background: var(--ink);
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    inset 0 -4px 0 rgba(0,0,0,0.3),
+    inset 0 4px 1px rgba(255,255,255,0.15),
+    0 8px 16px -8px rgba(15,15,26,0.3);
+}
+.mile-stud::after {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow:
+    inset 0 -2px 0 rgba(0,0,0,0.2),
+    inset 0 2px 1px rgba(255,255,255,0.3);
+}
+.mile:nth-child(1) .mile-stud::after { background: var(--orange); }
+.mile:nth-child(2) .mile-stud::after { background: var(--blue); }
+.mile:nth-child(3) .mile-stud::after { background: var(--green); }
+.mile:nth-child(4) .mile-stud::after { background: var(--yellow); }
+.mile:nth-child(5) .mile-stud::after { background: var(--red); }
+
+.mile-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+}
+.mile-desc {
+  font-size: var(--small);
+  opacity: 0.7;
+  line-height: 1.4;
+}
+
+/* ============================================================
+   PROJECTIONS — animated bars
+   ============================================================ */
+.projections { background: var(--ink); color: var(--cream); }
+
+.proj-layout {
+  display: grid; grid-template-columns: 1fr 1.2fr;
+  gap: var(--gutter);
+  align-items: center;
+  margin-top: 3rem;
+}
+
+.proj-intro h3 {
+  font-size: var(--display);
+  margin-bottom: 1.5rem;
+}
+.proj-intro h3 .accent { color: var(--green); }
+.proj-intro p { opacity: 0.8; max-width: 36ch; }
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 2rem;
+  height: 420px;
+  padding: 2rem;
+  background: rgba(244, 239, 230, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(244, 239, 230, 0.08);
+}
+
+.bar-group {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.bar-stack {
+  width: 100%;
+  display: flex; flex-direction: column-reverse;
+  gap: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  transition: height 1.5s var(--ease-out);
+  height: 0;
+}
+.bar-stack.in {
+  /* will be set inline */
+}
+
+.bar-segment {
+  width: 100%;
+  position: relative;
+}
+.bar-segment.ppu { background: var(--orange); }
+.bar-segment.sub { background: var(--blue); }
+.bar-segment.b2b { background: var(--green); }
+
+.bar-total {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 1.125rem;
+  margin-bottom: 0.5rem;
+  color: var(--orange);
+}
+
+.bar-year {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-top: 0.5rem;
+}
+
+.chart-legend {
+  display: flex; gap: 1.5rem;
+  margin-top: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+.proj-callout {
+  margin-top: 4rem;
+  padding: 2rem 2.5rem;
+  background: rgba(6, 167, 125, 0.1);
+  border-left: 4px solid var(--green);
+  border-radius: 4px;
+}
+.proj-callout-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--green);
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+.proj-callout p { font-size: 1.125rem; line-height: 1.5; }
+
+/* ============================================================
+   PORTEUR / TEAM
+   ============================================================ */
+.team {
+  background: var(--cream);
+}
+.team-layout {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--gutter);
+  align-items: start;
+}
+
+.team-avatar {
+  aspect-ratio: 1;
+  background: var(--ink);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+  display: grid; place-items: center;
+  transform: rotate(-1deg);
+  transition: transform 0.5s var(--ease-out);
+}
+.team-avatar:hover { transform: rotate(0); }
+
+.avatar-grid {
+  position: absolute; inset: 1rem;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  gap: 2px;
+}
+
+.avatar-grid .brick { animation-delay: var(--d, 0s); }
+
+.avatar-tag {
+  position: absolute;
+  bottom: 1rem; left: 1rem;
+  background: var(--orange);
+  color: var(--cream);
+  padding: 0.4rem 0.8rem;
+  border-radius: 100px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  z-index: 1;
+}
+
+.team-content h3 {
+  font-size: var(--display);
+  margin-bottom: 1.5rem;
+  letter-spacing: -0.04em;
+}
+.team-content h3 .accent { color: var(--orange); }
+
+.team-bio {
+  font-size: 1.125rem;
+  line-height: 1.5;
+  margin-bottom: 2rem;
+  max-width: 42ch;
+}
+
+.skills-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+.skill-block-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--orange);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+.skill-list {
+  list-style: none;
+  display: flex; flex-direction: column;
+  gap: 0.5rem;
+}
+.skill-list li {
+  font-size: var(--small);
+  padding-left: 1rem;
+  position: relative;
+}
+.skill-list li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: var(--orange);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ============================================================
+   VISION CTA
+   ============================================================ */
+.vision {
+  background: var(--orange);
+  color: var(--ink);
+  min-height: 80vh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.vision-content {
+  max-width: 900px;
+}
+
+.vision h2 {
+  font-size: clamp(2.5rem, 8vw, 7rem);
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+  margin-bottom: 2rem;
+  font-variation-settings: "wdth" 75;
+}
+.vision h2 em {
+  font-style: italic;
+  font-variation-settings: "wdth" 100;
+  font-weight: 400;
+}
+
+.vision-sub {
+  font-size: 1.5rem;
+  line-height: 1.4;
+  margin-bottom: 3rem;
+  opacity: 0.85;
+}
+
+.vision-meta {
+  margin-top: 4rem;
+  display: flex; gap: 3rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--small);
+  letter-spacing: 0.05em;
+}
+.vision-meta div { opacity: 0.7; }
+.vision-meta strong { display: block; font-weight: 700; color: var(--ink); opacity: 1; }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+footer {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 4rem var(--gutter) 2rem;
+}
+
+.footer-top {
+  display: grid; grid-template-columns: 2fr 1fr 1fr;
+  gap: 3rem;
+  margin-bottom: 4rem;
+}
+
+.footer-brand {
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  font-variation-settings: "wdth" 75;
+  margin-bottom: 1rem;
+}
+.footer-brand .dot { color: var(--orange); }
+
+.footer-col h4 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+  font-weight: 500;
+}
+.footer-col p { font-size: var(--small); line-height: 1.6; opacity: 0.8; }
+
+.footer-bottom {
+  border-top: 1px solid rgba(244,239,230,0.1);
+  padding-top: 2rem;
+  display: flex; justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--tiny);
+  opacity: 0.5;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================================
+   MARQUEE
+   ============================================================ */
+.marquee {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 1.5rem 0;
+  overflow: hidden;
+  border-top: 1px solid rgba(244,239,230,0.1);
+  border-bottom: 1px solid rgba(244,239,230,0.1);
+}
+.marquee-track {
+  display: flex;
+  gap: 4rem;
+  animation: marquee 30s linear infinite;
+  white-space: nowrap;
+  font-family: 'Bricolage Grotesque', sans-serif;
+  font-weight: 800;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  letter-spacing: -0.03em;
+  font-variation-settings: "wdth" 75;
+}
+.marquee-item { display: flex; align-items: center; gap: 4rem; }
+.marquee-item .star { color: var(--orange); }
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; gap: 4rem; padding-top: 8rem; }
+  .problem-layout,
+  .market-headline,
+  .solution-intro,
+  .proj-layout,
+  .team-layout { grid-template-columns: 1fr; }
+  .problem-headline { position: relative; top: 0; }
+  .segments-grid,
+  .pricing-grid,
+  .timeline,
+  .journey-track,
+  .pipeline {
+    grid-template-columns: 1fr 1fr;
+  }
+  .pipeline::before, .timeline::before, .journey-track::before { display: none; }
+  .footer-top { grid-template-columns: 1fr; }
+  .map { aspect-ratio: 1; }
+  .bubble.brickify { width: 90px; height: 90px; font-size: 0.85rem; }
+  .bubble.compet { width: 56px; height: 56px; }
+}
+@media (max-width: 540px) {
+  .segments-grid,
+  .pricing-grid,
+  .timeline,
+  .journey-track,
+  .pipeline {
+    grid-template-columns: 1fr;
+  }
+  .pipe-step, .mile, .j-step { padding-top: 1rem; }
+  .stats-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<nav>
+  <div class="brand">BRICKIFY<span class="brand-dot"></span></div>
+  <div class="nav-meta">Pitch · MIAGE Nancy · 2025/26</div>
+</nav>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-content">
+    <div class="hero-tag reveal">Projet de cours · Création d'entreprise</div>
+    <h1 class="hero-title reveal reveal-delay-1">
+      Vos souvenirs,<br>
+      <span class="accent">brique par brique.</span>
+    </h1>
+    <p class="hero-subtitle reveal reveal-delay-2">
+      BRICKIFY transforme n'importe quelle image en mosaïque LEGO® buildable
+      en <strong>30 secondes</strong>, grâce à un pipeline d'IA propriétaire.
+    </p>
+    <div class="hero-cta-row reveal reveal-delay-3">
+      <a href="#solution" class="btn">Découvrir le pipeline <span class="btn-arrow">→</span></a>
+      <a href="#pricing" class="btn btn-ghost">Voir le pricing</a>
+    </div>
+  </div>
+
+  <div class="mosaic-stage reveal reveal-delay-2">
+    <div class="mosaic-frame">
+      <div class="mosaic-grid" id="mosaic"></div>
+    </div>
+    <div class="mosaic-caption">
+      Photo <span class="mosaic-caption-arrow">→</span> Mosaïque LEGO en 30 secondes
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     STATS BANNER
+     ============================================================ -->
+<section class="stats-banner">
+  <div class="section-label reveal" style="color: var(--cream); opacity: 0.7;">01 · L'opportunité en 4 chiffres</div>
+  <div class="stats-grid">
+    <div class="stat reveal reveal-delay-1">
+      <div class="stat-num"><span class="counter" data-target="9.65">0</span> <span class="unit">Md€</span></div>
+      <div class="stat-label">Marché LEGO mondial 2023</div>
+    </div>
+    <div class="stat reveal reveal-delay-2">
+      <div class="stat-num"><span class="counter" data-target="10">0</span> <span class="unit">M+</span></div>
+      <div class="stat-label">AFOL dans le monde</div>
+    </div>
+    <div class="stat reveal reveal-delay-3">
+      <div class="stat-num">~<span class="counter" data-target="30">0</span> <span class="unit">sec</span></div>
+      <div class="stat-label">Par conversion image → LEGO</div>
+    </div>
+    <div class="stat reveal reveal-delay-4">
+      <div class="stat-num"><span class="counter" data-target="4">0</span> <span class="unit">segments</span></div>
+      <div class="stat-label">AFOL · Parents · Designers · B2B</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PROBLEM
+     ============================================================ -->
+<section class="problem">
+  <div class="section-label reveal">02 · Le problème</div>
+  <div class="problem-layout">
+    <h2 class="problem-headline reveal">
+      Personnaliser une mosaïque LEGO,<br>
+      c'est aujourd'hui <span class="strike">long, technique, et cher.</span>
+    </h2>
+    <div>
+      <div class="problem-cards">
+        <div class="pcard reveal reveal-delay-1">
+          <div class="pcard-num">01 / Pas de solution grand public</div>
+          <p>Aucun outil aujourd'hui ne permet de convertir une image personnelle en mosaïque LEGO buildable avec une qualité professionnelle.</p>
+        </div>
+        <div class="pcard reveal reveal-delay-2">
+          <div class="pcard-num">02 / Outils techniques inaccessibles</div>
+          <p>BrickLink Studio et Mosaicit demandent <strong>plusieurs heures</strong> de travail manuel et une expertise non triviale en design LEGO.</p>
+        </div>
+        <div class="pcard reveal reveal-delay-3">
+          <div class="pcard-num">03 / Services artisanaux hors de prix</div>
+          <p>Etsy facture <strong>80 à 300 €</strong> par mosaïque, avec des délais de <strong>2 à 4 semaines</strong>.</p>
+        </div>
+      </div>
+
+      <div class="verbatim reveal reveal-delay-4">
+        <div class="verbatim-quote">
+          J'ai passé tout un week-end sur BrickLink Studio pour faire un portrait de ma fille. C'est long, c'est technique, et le résultat n'est jamais aussi propre que je l'imaginais. J'aurais payé 10 € pour avoir le résultat en 30 secondes.
+        </div>
+        <div class="verbatim-author">— Profil AFOL · Typologie cible BRICKIFY</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     MARQUEE
+     ============================================================ -->
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <div class="marquee-item">
+      <span>AFOL</span><span class="star">✦</span>
+      <span>PARENTS CRÉATIFS</span><span class="star">✦</span>
+      <span>DESIGNERS</span><span class="star">✦</span>
+      <span>B2B</span><span class="star">✦</span>
+      <span>AGENCES</span><span class="star">✦</span>
+      <span>ÉCOLES</span><span class="star">✦</span>
+    </div>
+    <div class="marquee-item" aria-hidden="true">
+      <span>AFOL</span><span class="star">✦</span>
+      <span>PARENTS CRÉATIFS</span><span class="star">✦</span>
+      <span>DESIGNERS</span><span class="star">✦</span>
+      <span>B2B</span><span class="star">✦</span>
+      <span>AGENCES</span><span class="star">✦</span>
+      <span>ÉCOLES</span><span class="star">✦</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     SOLUTION / PIPELINE
+     ============================================================ -->
+<section class="solution" id="solution">
+  <div class="section-label reveal">03 · Notre solution</div>
+  <div class="solution-intro">
+    <h2 class="reveal">
+      Un pipeline d'IA<br>
+      en <span class="accent">cinq briques.</span>
+    </h2>
+    <p class="solution-lede reveal reveal-delay-2">
+      La force n'est pas dans la technologie elle-même — chaque brique est connue —
+      mais dans l'optimisation conjointe pour tenir un temps de traitement utilisateur
+      sous 30 secondes. C'est plusieurs mois d'ingénierie qu'un concurrent devrait reproduire.
+    </p>
+  </div>
+
+  <div class="pipeline">
+    <div class="pipe-step reveal reveal-delay-1">
+      <div class="pipe-num">1</div>
+      <div class="pipe-title">Segmentation</div>
+      <div class="pipe-tech">SAM · Meta AI</div>
+      <div class="pipe-desc">Identifier les contours des sujets dans l'image pour concentrer la richesse colorimétrique.</div>
+    </div>
+    <div class="pipe-step reveal reveal-delay-2">
+      <div class="pipe-num">2</div>
+      <div class="pipe-title">Quantification</div>
+      <div class="pipe-tech">K-means · CIE LAB</div>
+      <div class="pipe-desc">Réduire la palette à 62 couleurs LEGO officielles dans l'espace perceptuel humain.</div>
+    </div>
+    <div class="pipe-step reveal reveal-delay-3">
+      <div class="pipe-num">3</div>
+      <div class="pipe-title">Optimisation</div>
+      <div class="pipe-tech">Algorithme génétique</div>
+      <div class="pipe-desc">Combiner des pièces (1x2, 2x2, plates) pour minimiser coût et complexité de montage.</div>
+    </div>
+    <div class="pipe-step reveal reveal-delay-4">
+      <div class="pipe-num">4</div>
+      <div class="pipe-title">Recommandation</div>
+      <div class="pipe-tech">Stock BrickLink temps réel</div>
+      <div class="pipe-desc">Proposer des alternatives équivalentes quand une pièce est en rupture ou trop chère.</div>
+    </div>
+    <div class="pipe-step reveal reveal-delay-5">
+      <div class="pipe-num">5</div>
+      <div class="pipe-title">Génération</div>
+      <div class="pipe-tech">Stable Diffusion · Phase 2</div>
+      <div class="pipe-desc">Générer des mosaïques à partir d'une simple description textuelle.</div>
+    </div>
+  </div>
+
+  <div class="pipe-flow reveal">
+    <span>Image en entrée</span>
+    <span>→</span>
+    <span class="duration">~30 secondes</span>
+    <span>→</span>
+    <span>Mosaïque LEGO buildable</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     USER JOURNEY
+     ============================================================ -->
+<section class="journey">
+  <div class="section-label reveal">04 · L'expérience utilisateur</div>
+  <h2 class="reveal" style="max-width: 18ch;">
+    Trois clics.<br>
+    Trente secondes.<br>
+    <em style="color: var(--orange); font-variation-settings: 'wdth' 100;">Une mosaïque.</em>
+  </h2>
+
+  <div class="journey-track">
+    <div class="j-step reveal reveal-delay-1">
+      <div class="j-circle">1</div>
+      <div class="j-label">Upload</div>
+      <div class="j-sub">Drag &amp; drop d'une image personnelle</div>
+    </div>
+    <div class="j-step reveal reveal-delay-2">
+      <div class="j-circle">2</div>
+      <div class="j-label">Personnalisation</div>
+      <div class="j-sub">Format, palette, niveau de détail</div>
+    </div>
+    <div class="j-step reveal reveal-delay-3">
+      <div class="j-circle">3</div>
+      <div class="j-label">Génération IA</div>
+      <div class="j-sub">Le pipeline tourne, ~30 secondes</div>
+    </div>
+    <div class="j-step reveal reveal-delay-4">
+      <div class="j-circle">4</div>
+      <div class="j-label">Résultat</div>
+      <div class="j-sub">Visualisation + liste de pièces + instructions</div>
+    </div>
+    <div class="j-step reveal reveal-delay-5">
+      <div class="j-circle">5</div>
+      <div class="j-label">Achat</div>
+      <div class="j-sub">Liens directs BrickLink &amp; Rebrickable</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     MARKET
+     ============================================================ -->
+<section class="market">
+  <div class="section-label reveal">05 · Le marché</div>
+  <div class="market-headline">
+    <h2 class="reveal" style="max-width: 16ch;">
+      Un marché<br>
+      <span style="color: var(--orange);">en pleine</span><br>
+      mue.
+    </h2>
+    <div class="market-num-card reveal reveal-delay-2">
+      <div class="mc-num">+60%</div>
+      <div class="mc-label">Croissance du groupe LEGO sur 5 ans</div>
+      <p style="margin-top: 1.5rem; opacity: 0.8; max-width: 32ch; font-size: var(--small); line-height: 1.5;">
+        Le segment adulte est le moteur de croissance le plus dynamique. Les AFOL forment
+        une communauté densément organisée en ligne, adressable à coût marginal très faible.
+      </p>
+    </div>
+  </div>
+
+  <div class="segments-grid">
+    <div class="seg reveal reveal-delay-1">
+      <div class="seg-tag">Segment 01</div>
+      <div class="seg-name">AFOL</div>
+      <div class="seg-desc">MOC personnalisés, mosaïques de collection, partage communautaire. Disposition à payer élevée (10–50 €).</div>
+      <div class="seg-volume">~60 000 actifs en France</div>
+    </div>
+    <div class="seg reveal reveal-delay-2">
+      <div class="seg-tag">Segment 02</div>
+      <div class="seg-name">Parents créatifs</div>
+      <div class="seg-desc">Cadeaux personnalisés, activités créatives en famille. Disposition moyenne (5–25 €).</div>
+      <div class="seg-volume">Très large grand public</div>
+    </div>
+    <div class="seg reveal reveal-delay-3">
+      <div class="seg-tag">Segment 03</div>
+      <div class="seg-name">Designers</div>
+      <div class="seg-desc">Œuvres décoratives, installations, production artistique. Disposition élevée à très élevée.</div>
+      <div class="seg-volume">Niche premium</div>
+    </div>
+    <div class="seg reveal reveal-delay-4">
+      <div class="seg-tag">Segment 04</div>
+      <div class="seg-name">B2B</div>
+      <div class="seg-desc">Goodies, team building, mosaïques logos en entreprise. Sur devis, panier moyen élevé.</div>
+      <div class="seg-volume">PME, agences, écoles</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     POSITIONING / MAPPING
+     ============================================================ -->
+<section class="positioning">
+  <div class="section-label reveal">06 · Le positionnement</div>
+  <h2 class="reveal" style="max-width: 22ch;">
+    Une case stratégique<br>
+    <span style="color: var(--orange);">encore vide.</span>
+  </h2>
+  <p class="reveal reveal-delay-1" style="max-width: 56ch; margin-top: 1.5rem; opacity: 0.75; font-size: 1.125rem; line-height: 1.5;">
+    Aucun acteur ne combine aujourd'hui IA + qualité buildable + intégration directe BrickLink.
+    LEGO Art est figé, BrickLink Studio est trop technique, les artisans Etsy sont chers et lents.
+  </p>
+
+  <div class="map reveal reveal-delay-2">
+    <div class="map-axis y">Rapidité →</div>
+    <div class="map-axis x">Personnalisation →</div>
+    <div class="map-quad tl">Rapide · standard</div>
+    <div class="map-quad tr">Rapide · sur-mesure</div>
+    <div class="map-quad bl">Lent · standard</div>
+    <div class="map-quad br">Lent · sur-mesure</div>
+
+    <div class="bubble compet lego-art">LEGO<br>Art</div>
+    <div class="bubble compet bricklink">BrickLink<br>Studio</div>
+    <div class="bubble compet brickapic">Bricka<br>Pic</div>
+    <div class="bubble compet mosaicit">Mosaicit<br>Etsy</div>
+    <div class="bubble brickify">BRICKIFY</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PRICING
+     ============================================================ -->
+<section class="pricing" id="pricing">
+  <div class="section-label reveal" style="color: var(--cream); opacity: 0.7;">07 · Le modèle économique</div>
+  <h2 class="reveal" style="max-width: 22ch;">
+    Hybride.<br>
+    <span style="color: var(--orange);">Pay-per-use + abonnement.</span>
+  </h2>
+  <p class="reveal reveal-delay-1" style="max-width: 56ch; margin-top: 1.5rem; opacity: 0.8; font-size: 1.125rem;">
+    Le modèle hybride maximise la conversion sur tout le spectre d'usage : achat à l'unité
+    pour les occasionnels, abonnement pour les réguliers et le B2B.
+  </p>
+
+  <div class="pricing-grid">
+    <div class="plan reveal reveal-delay-1">
+      <div class="plan-tag">Découverte</div>
+      <div class="plan-name">Gratuit</div>
+      <div class="plan-price">0 €<span class="unit"></span></div>
+      <div class="plan-when">Conversion filigranée</div>
+      <div class="plan-target">Acquisition sans friction. Une conversion offerte pour découvrir.</div>
+      <div class="plan-cta">Commencer</div>
+    </div>
+    <div class="plan reveal reveal-delay-2">
+      <div class="plan-tag">À l'unité</div>
+      <div class="plan-name">Pack 10</div>
+      <div class="plan-price">14,90 €<span class="unit"></span></div>
+      <div class="plan-when">−25 % sur l'unité</div>
+      <div class="plan-target">Parents, cadeaux ponctuels. Pack également disponible : 50 à 49,90 € (−50 %).</div>
+      <div class="plan-cta">Acheter le pack</div>
+    </div>
+    <div class="plan featured reveal reveal-delay-3">
+      <div class="plan-tag">Abonnement</div>
+      <div class="plan-name">Pro illimité</div>
+      <div class="plan-price">9,90 €<span class="unit"> / mois</span></div>
+      <div class="plan-when">Conversions illimitées</div>
+      <div class="plan-target">AFOL réguliers, designers. Idéal pour ceux qui créent en continu.</div>
+      <div class="plan-cta">Souscrire</div>
+    </div>
+    <div class="plan reveal reveal-delay-4">
+      <div class="plan-tag">Entreprises</div>
+      <div class="plan-name">Business</div>
+      <div class="plan-price">29 €<span class="unit"> / mois</span></div>
+      <div class="plan-when">API + branding</div>
+      <div class="plan-target">PME, agences, écoles. Accès API, marque blanche, devis sur volume.</div>
+      <div class="plan-cta">Contacter</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ROADMAP
+     ============================================================ -->
+<section class="roadmap">
+  <div class="section-label reveal">08 · La trajectoire</div>
+  <h2 class="reveal" style="max-width: 22ch;">
+    De la bêta privée<br>
+    au <span style="color: var(--orange);">leader européen.</span>
+  </h2>
+
+  <div class="timeline">
+    <div class="mile reveal reveal-delay-1">
+      <div class="mile-date">Été 2026</div>
+      <div class="mile-stud"></div>
+      <div class="mile-title">Bêta privée</div>
+      <div class="mile-desc">100 testeurs AFOL recrutés via Reddit et forums spécialisés.</div>
+    </div>
+    <div class="mile reveal reveal-delay-2">
+      <div class="mile-date">Sept. 2026</div>
+      <div class="mile-stud"></div>
+      <div class="mile-title">Lancement</div>
+      <div class="mile-desc">1 000 utilisateurs, 200 payants, validation product-market fit.</div>
+    </div>
+    <div class="mile reveal reveal-delay-3">
+      <div class="mile-date">2027</div>
+      <div class="mile-stud"></div>
+      <div class="mile-title">Scale</div>
+      <div class="mile-desc">Phase 2 Stable Diffusion, 10 000 utilisateurs, rentabilité.</div>
+    </div>
+    <div class="mile reveal reveal-delay-4">
+      <div class="mile-date">2028</div>
+      <div class="mile-stud"></div>
+      <div class="mile-title">Expansion EU</div>
+      <div class="mile-desc">3 langues supplémentaires, partenariats B2B structurants.</div>
+    </div>
+    <div class="mile reveal reveal-delay-5">
+      <div class="mile-date">2029</div>
+      <div class="mile-stud"></div>
+      <div class="mile-title">Leader EU</div>
+      <div class="mile-desc">Levée seed éventuelle, diversification produit (3D, dioramas).</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PROJECTIONS
+     ============================================================ -->
+<section class="projections">
+  <div class="section-label reveal" style="color: var(--cream); opacity: 0.7;">09 · Les projections</div>
+  <div class="proj-layout">
+    <div class="proj-intro">
+      <h3 class="reveal">
+        Rentable<br>
+        dès <span class="accent">l'année 1.</span>
+      </h3>
+      <p class="reveal reveal-delay-1">
+        Coûts variables très faibles (~3 % du CA) grâce à un coût par conversion
+        inférieur à 0,10 €. Marge brute ~97 %. Trésorerie positive sur l'ensemble
+        de l'année 1, point mort opérationnel atteint au mois 7–8.
+      </p>
+    </div>
+
+    <div>
+      <div class="chart reveal reveal-delay-2" id="chart">
+        <div class="bar-group">
+          <div class="bar-total">21 k€</div>
+          <div class="bar-stack" data-h="50">
+            <div class="bar-segment ppu" style="height: 60%;"></div>
+            <div class="bar-segment sub" style="height: 30%;"></div>
+            <div class="bar-segment b2b" style="height: 10%;"></div>
+          </div>
+          <div class="bar-year">Année 1</div>
+        </div>
+        <div class="bar-group">
+          <div class="bar-total">158 k€</div>
+          <div class="bar-stack" data-h="170">
+            <div class="bar-segment ppu" style="height: 52%;"></div>
+            <div class="bar-segment sub" style="height: 37%;"></div>
+            <div class="bar-segment b2b" style="height: 11%;"></div>
+          </div>
+          <div class="bar-year">Année 2</div>
+        </div>
+        <div class="bar-group">
+          <div class="bar-total">560 k€</div>
+          <div class="bar-stack" data-h="340">
+            <div class="bar-segment ppu" style="height: 51%;"></div>
+            <div class="bar-segment sub" style="height: 38%;"></div>
+            <div class="bar-segment b2b" style="height: 11%;"></div>
+          </div>
+          <div class="bar-year">Année 3</div>
+        </div>
+      </div>
+      <div class="chart-legend">
+        <span><span class="legend-dot" style="background: var(--orange);"></span>Pay-per-use</span>
+        <span><span class="legend-dot" style="background: var(--blue);"></span>Abonnements</span>
+        <span><span class="legend-dot" style="background: var(--green);"></span>B2B</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="proj-callout reveal">
+    <div class="proj-callout-label">La vision financière</div>
+    <p>
+      En année 3, résultat avant impôts de <strong>158 k€</strong> pour un CA de
+      <strong>560 k€</strong>, soit une marge nette de ~28 %. Plan de financement initial
+      équilibré à <strong>10 k€</strong> (apport personnel + Pépite + Initiative Lorraine).
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================
+     PORTEUR
+     ============================================================ -->
+<section class="team">
+  <div class="section-label reveal">10 · Le porteur</div>
+  <div class="team-layout">
+    <div class="team-avatar reveal">
+      <div class="avatar-grid" id="avatar"></div>
+      <div class="avatar-tag">M1 MIAGE Nancy</div>
+    </div>
+    <div class="team-content">
+      <h3 class="reveal reveal-delay-1">
+        Un profil<br>
+        double tech<br>
+        <span class="accent">+ gestion.</span>
+      </h3>
+      <p class="team-bio reveal reveal-delay-2">
+        Étudiants en Master 1 MIAGE à l'Université de Lorraine. Cette polyvalence
+        permet un démarrage agile à coûts maîtrisés, là où un projet équivalent
+        nécessiterait habituellement un binôme CTO + CEO.
+      </p>
+
+      <div class="skills-grid">
+        <div class="reveal reveal-delay-3">
+          <div class="skill-block-title">Technique</div>
+          <ul class="skill-list">
+            <li>Backend Java, Python, FastAPI</li>
+            <li>PostgreSQL, Power Platform</li>
+            <li>React, Vue.js</li>
+            <li>APIs IA (Replicate, Hugging Face)</li>
+          </ul>
+        </div>
+        <div class="reveal reveal-delay-4">
+          <div class="skill-block-title">Gestion</div>
+          <ul class="skill-list">
+            <li>Analyse stratégique</li>
+            <li>Business model &amp; pricing</li>
+            <li>Étude de marché</li>
+            <li>Gestion de projet agile</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     VISION CTA
+     ============================================================ -->
+<section class="vision">
+  <div class="vision-content">
+    <div class="section-label reveal" style="justify-content: center; opacity: 0.6;">11 · La vision</div>
+    <h2 class="reveal reveal-delay-1">
+      Devenir le réflexe des AFOL européens pour matérialiser
+      <em>n'importe quelle idée</em> en briques.
+    </h2>
+    <p class="vision-sub reveal reveal-delay-2">
+      À 3 ans, la référence européenne francophone. À 5 ans, l'extension à d'autres
+      formes de personnalisation : dioramas, sets miniatures, modèles 3D.
+    </p>
+    <div class="vision-meta reveal reveal-delay-3">
+      <div>
+        <strong>10 000 €</strong>
+        Plan de financement initial
+      </div>
+      <div>
+        <strong>30 sec</strong>
+        Par conversion
+      </div>
+      <div>
+        <strong>560 k€</strong>
+        CA projeté année 3
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FOOTER
+     ============================================================ -->
+<footer>
+  <div class="footer-top">
+    <div>
+      <div class="footer-brand">BRICKIFY<span class="dot">.</span></div>
+      <p style="max-width: 36ch; opacity: 0.7;">
+        Une application web SaaS qui transforme vos souvenirs en mosaïques LEGO buildables,
+        grâce à un pipeline d'IA propriétaire.
+      </p>
+    </div>
+    <div class="footer-col">
+      <h4>Projet</h4>
+      <p>
+        M1 MIAGE Nancy<br>
+        Université de Lorraine<br>
+        Année 2025/2026
+      </p>
+    </div>
+    <div class="footer-col">
+      <h4>Cours</h4>
+      <p>
+        Création d'entreprise<br>
+        Patrick Nourrissier
+      </p>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <div>© 2026 BRICKIFY — Projet académique</div>
+    <div>LEGO® est une marque déposée du Groupe LEGO, non affilié à ce projet.</div>
+  </div>
+</footer>
+
+<script>
+/* ============================================================
+   1. LEGO MOSAIC HERO — generate the grid with colors
+   ============================================================ */
+const colors = ['c-orange','c-red','c-yellow','c-blue','c-green','c-cream','c-ink','c-grey','c-pink'];
+
+// A 12x12 mosaic - playful abstract face / heart pattern
+const mosaicPattern = [
+  ['c-ink','c-ink','c-ink','c-ink','c-cream','c-cream','c-cream','c-cream','c-ink','c-ink','c-ink','c-ink'],
+  ['c-ink','c-ink','c-cream','c-cream','c-yellow','c-yellow','c-yellow','c-yellow','c-cream','c-cream','c-ink','c-ink'],
+  ['c-ink','c-cream','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-cream','c-ink'],
+  ['c-cream','c-yellow','c-yellow','c-ink','c-ink','c-yellow','c-yellow','c-ink','c-ink','c-yellow','c-yellow','c-cream'],
+  ['c-cream','c-yellow','c-yellow','c-ink','c-ink','c-yellow','c-yellow','c-ink','c-ink','c-yellow','c-yellow','c-cream'],
+  ['c-cream','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-cream'],
+  ['c-cream','c-yellow','c-red','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-red','c-yellow','c-cream'],
+  ['c-cream','c-yellow','c-yellow','c-red','c-red','c-red','c-red','c-red','c-red','c-yellow','c-yellow','c-cream'],
+  ['c-ink','c-cream','c-yellow','c-yellow','c-red','c-red','c-red','c-red','c-yellow','c-yellow','c-cream','c-ink'],
+  ['c-ink','c-ink','c-cream','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-yellow','c-cream','c-ink','c-ink'],
+  ['c-ink','c-ink','c-ink','c-cream','c-cream','c-cream','c-cream','c-cream','c-cream','c-ink','c-ink','c-ink'],
+  ['c-ink','c-ink','c-ink','c-ink','c-ink','c-orange','c-orange','c-ink','c-ink','c-ink','c-ink','c-ink'],
+];
+
+const mosaic = document.getElementById('mosaic');
+mosaicPattern.flat().forEach((color, i) => {
+  const brick = document.createElement('div');
+  brick.className = `brick ${color}`;
+  brick.style.animationDelay = `${i * 12}ms`;
+  mosaic.appendChild(brick);
+});
+
+/* Avatar mosaic — 8x8 abstract */
+const avatarColors = [
+  ['c-ink','c-ink','c-orange','c-orange','c-orange','c-orange','c-ink','c-ink'],
+  ['c-ink','c-orange','c-cream','c-cream','c-cream','c-cream','c-orange','c-ink'],
+  ['c-orange','c-cream','c-blue','c-cream','c-cream','c-blue','c-cream','c-orange'],
+  ['c-orange','c-cream','c-cream','c-cream','c-cream','c-cream','c-cream','c-orange'],
+  ['c-orange','c-cream','c-cream','c-red','c-red','c-cream','c-cream','c-orange'],
+  ['c-orange','c-cream','c-red','c-cream','c-cream','c-red','c-cream','c-orange'],
+  ['c-ink','c-orange','c-cream','c-red','c-red','c-cream','c-orange','c-ink'],
+  ['c-ink','c-ink','c-orange','c-orange','c-orange','c-orange','c-ink','c-ink'],
+];
+
+const avatar = document.getElementById('avatar');
+avatarColors.flat().forEach((color, i) => {
+  const brick = document.createElement('div');
+  brick.className = `brick ${color}`;
+  brick.style.animationDelay = `${i * 20 + 200}ms`;
+  avatar.appendChild(brick);
+});
+
+/* ============================================================
+   2. SCROLL PROGRESS BAR
+   ============================================================ */
+const progress = document.getElementById('progress');
+window.addEventListener('scroll', () => {
+  const scrolled = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+  progress.style.width = scrolled + '%';
+}, { passive: true });
+
+/* ============================================================
+   3. REVEAL ANIMATIONS — IntersectionObserver
+   ============================================================ */
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('in');
+      io.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+/* ============================================================
+   4. NUMBER COUNTERS
+   ============================================================ */
+const counters = document.querySelectorAll('.counter');
+const counterIO = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const el = entry.target;
+      const target = parseFloat(el.getAttribute('data-target'));
+      const isDecimal = target % 1 !== 0;
+      const duration = 1800;
+      const start = performance.now();
+      const animate = (now) => {
+        const t = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const value = target * eased;
+        el.textContent = isDecimal ? value.toFixed(2) : Math.floor(value);
+        if (t < 1) requestAnimationFrame(animate);
+        else el.textContent = isDecimal ? target.toFixed(2) : target;
+      };
+      requestAnimationFrame(animate);
+      counterIO.unobserve(el);
+    }
+  });
+}, { threshold: 0.5 });
+
+counters.forEach(c => counterIO.observe(c));
+
+/* ============================================================
+   5. CHART BARS — animate on view
+   ============================================================ */
+const chartIO = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const bars = entry.target.querySelectorAll('.bar-stack');
+      bars.forEach((bar, i) => {
+        const targetH = parseInt(bar.getAttribute('data-h'));
+        setTimeout(() => {
+          bar.style.height = targetH + 'px';
+        }, i * 200 + 300);
+      });
+      chartIO.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.3 });
+
+const chart = document.getElementById('chart');
+if (chart) chartIO.observe(chart);
+</script>
+
+</body>
+</html>
